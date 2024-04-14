@@ -1,0 +1,2 @@
+transformers==5.5.1
+PyMuPDF==1.19.13
