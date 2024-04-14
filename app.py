@@ -2,7 +2,10 @@ import os
 import textwrap
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 import codecs
-import fitz  
+import fitz
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
 
 tokenizer = AutoTokenizer.from_pretrained("pszemraj/led-large-book-summary")
 model = AutoModelForSeq2SeqLM.from_pretrained("pszemraj/led-large-book-summary")
@@ -29,37 +32,17 @@ def chunk_text(text, max_chunk_len=400):
         chunks.append(' '.join(tokens[i:i+max_chunk_len]))
     return chunks
 
-if _name_ == "_main_":
-    input_file = input("Enter the path to the input file: ")
-
-    if not os.path.exists(input_file):
-        print("File not found.")
-        exit()
-
-    file_extension = os.path.splitext(input_file)[1].lower()
-
-    if file_extension == ".pdf":
-        txt_file = os.path.splitext(input_file)[0] + ".txt"
-
-        pdf_text = convert_pdf_to_text(input_file)
-
-        with open(txt_file, "w", encoding="utf-8") as txt_file_obj:
-            txt_file_obj.write(pdf_text)
-
-        text = extract_text_from_txt(txt_file)
-    elif file_extension == ".txt":
-        text = extract_text_from_txt(input_file)
-    else:
-        print("Unsupported file format. Please provide either a PDF or a text file.")
-        exit()
-
+@app.route('/summarize', methods=['POST'])
+def summarize():
+    data = request.get_json()
+    text = data.get('text')
     text_chunks = chunk_text(text)
-
+    summaries = []
     for chunk_num, chunk in enumerate(text_chunks):
         summary = summarization_pipeline(chunk)[0]['summary_text']
         wrapped_summary = textwrap.fill(summary, width=80)
-        paragraphs = wrapped_summary.split('\n\n')
-        for paragraph_num, paragraph in enumerate(paragraphs):
-            wrapped_paragraph = textwrap.fill(paragraph, width=80)
-            formatted_summary = f"Chunk {chunk_num+1}, Paragraph {paragraph_num+1}:\n{wrapped_paragraph}\n\n"
-            print(formatted_summary)
+        summaries.append(wrapped_summary)
+    return jsonify({'summaries': summaries})
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
