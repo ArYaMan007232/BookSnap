@@ -7,6 +7,9 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+# Disable TensorRT
+os.environ['TF_TENSORRT_USE_FP16'] = '0'
+
 tokenizer = AutoTokenizer.from_pretrained("pszemraj/led-large-book-summary")
 model = AutoModelForSeq2SeqLM.from_pretrained("pszemraj/led-large-book-summary")
 
