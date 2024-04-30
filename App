@@ -1,0 +1,323 @@
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'BookSnap',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: WelcomeScreen(),
+    );
+  }
+}
+
+class WelcomeScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => UploadTextScreen()),
+          );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/BACKGROUND.jpg'),
+              fit: BoxFit.cover,
+            ),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Image.asset(
+                  'assets/ICON.jpg',
+                  width: 100,
+                  height: 100,
+                ),
+                SizedBox(height: 20),
+                Text(
+                  'BookSnap',
+                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+                SizedBox(height: 20),
+                Text(
+                  'Book Summarizer',
+                  style: TextStyle(fontSize: 16, color: Colors.red),
+                ),
+                Text(
+                  'Click anywhere to upload a text file and get a summary!',
+                  style: TextStyle(fontSize: 16, color: Colors.red),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class UploadTextScreen extends StatefulWidget {
+  @override
+  _UploadTextScreenState createState() => _UploadTextScreenState();
+}
+
+class _UploadTextScreenState extends State<UploadTextScreen> {
+  String _fileName = '';
+  String _fileText = '';
+
+  Future<void> _openFileExplorer() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['txt'],
+      );
+
+      if (result != null) {
+        File file = File(result.files.single.path!);
+        setState(() {
+          _fileName = basename(file.path);
+        });
+
+        // Read text from the file
+        String fileText = await file.readAsString();
+        setState(() {
+          _fileText = fileText;
+        });
+
+        // Generate summary
+        String summary = await summarizeText(fileText);
+
+        // Save summary to SharedPreferences
+        await _saveSummaryToSharedPreferences(_fileName, summary);
+      }
+    } catch (e) {
+      print("Error picking file: $e");
+    }
+  }
+
+  Future<void> _saveSummaryToSharedPreferences(String fileName, String summary) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(fileName, summary);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('assets/BACKGROUND.jpg'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              ElevatedButton(
+                onPressed: _openFileExplorer,
+                child: Text('Select Text File', style: TextStyle(color: Colors.black)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                ),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'File selected: $_fileName',
+                style: TextStyle(fontSize: 16, color: Colors.white),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () async {
+                  String summary = await summarizeText(_fileText);
+                  await _saveSummaryToSharedPreferences(_fileName, summary);
+                },
+                child: Text('Generate Summary', style: TextStyle(color: Colors.black)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                ),
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => SummaryListScreen()),
+                  );
+                },
+                child: Text('View Summaries', style: TextStyle(color: Colors.black)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SummaryListScreen extends StatefulWidget {
+  @override
+  _SummaryListScreenState createState() => _SummaryListScreenState();
+}
+
+class _SummaryListScreenState extends State<SummaryListScreen> {
+  List<String> fileNames = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSummariesFromSharedPreferences();
+  }
+
+  Future<void> _loadSummariesFromSharedPreferences() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      fileNames = prefs.getKeys().toList();
+    });
+  }
+
+  Future<void> _deleteSummary(String fileName) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove(fileName);
+    setState(() {
+      fileNames.remove(fileName);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Summary List'),
+      ),
+      body: Container(
+        color: Colors.black,
+        child: ListView.builder(
+          itemCount: fileNames.length,
+          itemBuilder: (context, index) {
+            return ListTile(
+              title: Text(
+                fileNames[index],
+                style: TextStyle(color: Colors.red),
+              ),
+              trailing: GestureDetector(
+                onTap: () {
+                  _deleteSummary(fileNames[index]);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Summary deleted')),
+                  );
+                },
+                child: Image.asset(
+                  'assets/BIN ICON.jpg', // Path to your custom delete icon image
+                  width: 36.0,
+                  height: 36.0,
+                ),
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SummaryScreen(fileName: fileNames[index])),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class SummaryScreen extends StatelessWidget {
+  final String fileName;
+
+  const SummaryScreen({Key? key, required this.fileName}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(fileName),
+      ),
+      body: FutureBuilder(
+        future: _getSummaryFromSharedPreferences(fileName),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            if (snapshot.hasError) {
+              return Text('Error: ${snapshot.error}');
+            } else {
+              String summary = snapshot.data as String;
+              return Container(
+                color: Colors.black,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: RawScrollbar(
+                    thumbVisibility: true,
+                    radius: Radius.circular(8),
+                    thickness: 8,
+                    child: ListView(
+                      children: [
+                        Text(
+                          summary,
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+          } else {
+            return Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  Future<String?> _getSummaryFromSharedPreferences(String fileName) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(fileName);
+  }
+}
+
+Future<String> summarizeText(String text) async {
+  var url = Uri.parse('http://127.0.0.1:5000/summarize');
+  var response = await http.post(
+    url,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: jsonEncode({'text': text}),
+  );
+
+  if (response.statusCode == 200) {
+    var data = jsonDecode(response.body);
+    var summary = data['result']; // Adjusted key to match the API response
+    return summary;
+  } else {
+    throw Exception('Failed to summarize text');
+  }
+}
+
